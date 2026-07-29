@@ -40,13 +40,12 @@ Trojan TLS、Hysteria2、TUIC 或启用 TLS 的 VMess 节点需要配置证书�
 
 ```text
 vboard-node-linux-amd64
-vboard-node-linux-amd64.sha256
 vboard-node-linux-arm64
-vboard-node-linux-arm64.sha256
 ```
 
-安装器会在执行二进制前校验 SHA256。生产环境不要使用
-`--skip-checksum`。
+GitHub 会为每个 Release 资产生成 SHA256 digest。安装器通过 GitHub
+Release API 读取对应二进制的 digest，并在执行前完成校验，因此不需要
+额外上传 `.sha256` 文件。生产环境不要使用 `--skip-checksum`。
 
 安装器默认从本仓库的 GitHub Releases 下载与当前 Linux 架构匹配的最新版
 节点程序，因此常规安装不需要额外传入 `--binary-url` 或

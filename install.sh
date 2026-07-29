@@ -54,6 +54,8 @@ TMP_DIR=""
 ROLLBACK_READY="false"
 SERVICE_EXISTED="false"
 STAGED_BINARY=""
+RELEASE_ARTIFACT=""
+RELEASE_API_URL=""
 
 usage() {
   cat <<'USAGE'
@@ -79,7 +81,7 @@ Options:
   --release-base <url>   GitHub Releases base URL, ending with /releases
   --version <version>    Release tag or latest (default: latest)
   --binary-sha256 <hex>  Expected SHA256 for the binary
-  --checksum-url <url>   SHA256 file URL (default: <binary-url>.sha256)
+  --checksum-url <url>   SHA256 file URL for a custom binary source
   --skip-checksum        Allow an unsigned download (not recommended)
   --install-dir <path>   Binary install directory (default: /usr/local/bin)
   --config-dir <path>    Config directory (default: /etc/vboard-node)
@@ -411,13 +413,33 @@ resolve_download_url() {
   fi
   [ -n "$RELEASE_BASE" ] || return 0
 
-  local artifact
+  local artifact repository owner repo
   artifact="${APP_NAME}-$(detect_arch)"
   RELEASE_BASE="${RELEASE_BASE%/}"
+  case "$RELEASE_BASE" in
+    https://github.com/*/*/releases) ;;
+    *) fatal "release base must look like https://github.com/<owner>/<repo>/releases" ;;
+  esac
+  repository="${RELEASE_BASE#https://github.com/}"
+  repository="${repository%/releases}"
+  owner="${repository%%/*}"
+  repo="${repository#*/}"
+  case "$repo" in
+    */*) fatal "release base must look like https://github.com/<owner>/<repo>/releases" ;;
+  esac
+  [ -n "$owner" ] && [ -n "$repo" ] && [ "$owner" != "$repo" ] ||
+    fatal "release base must look like https://github.com/<owner>/<repo>/releases"
+
+  RELEASE_ARTIFACT="$artifact"
   if [ "$RELEASE_VERSION" = "latest" ]; then
     BINARY_URL="${RELEASE_BASE}/latest/download/${artifact}"
+    RELEASE_API_URL="https://api.github.com/repos/${owner}/${repo}/releases/latest"
   else
+    case "$RELEASE_VERSION" in
+      ''|*[!A-Za-z0-9._-]*) fatal "release version contains unsupported characters" ;;
+    esac
     BINARY_URL="${RELEASE_BASE}/download/${RELEASE_VERSION}/${artifact}"
+    RELEASE_API_URL="https://api.github.com/repos/${owner}/${repo}/releases/tags/${RELEASE_VERSION}"
   fi
 }
 
@@ -441,12 +463,41 @@ resolve_expected_sha256() {
   fi
   [ "$SKIP_CHECKSUM" = "false" ] || return 0
 
-  local url checksum_file expected
-  url="${CHECKSUM_URL:-${BINARY_URL}.sha256}"
-  checksum_file="${TMP_DIR}/binary.sha256"
-  log "downloading checksum from $url" >&2
-  curl -fsSL "$url" -o "$checksum_file"
-  expected="$(awk 'NF {print $1; exit}' "$checksum_file" | tr '[:upper:]' '[:lower:]')"
+  local metadata_file expected
+  if [ -n "$CHECKSUM_URL" ]; then
+    metadata_file="${TMP_DIR}/binary.sha256"
+    log "downloading checksum from $CHECKSUM_URL" >&2
+    curl -fsSL "$CHECKSUM_URL" -o "$metadata_file"
+    expected="$(awk 'NF {print $1; exit}' "$metadata_file" | tr '[:upper:]' '[:lower:]')"
+    printf '%s' "$expected"
+    return
+  fi
+
+  if [ -z "$RELEASE_API_URL" ] || [ -z "$RELEASE_ARTIFACT" ]; then
+    fatal "custom binary downloads require --binary-sha256 or --checksum-url"
+  fi
+
+  log "reading GitHub release digest for $RELEASE_ARTIFACT" >&2
+  metadata_file="${TMP_DIR}/release.json"
+  curl -fsSL \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "$RELEASE_API_URL" \
+    -o "$metadata_file"
+  expected="$(
+    awk -v target="$RELEASE_ARTIFACT" '
+      index($0, "\"name\": \"" target "\"") { found = 1; next }
+      found && index($0, "\"digest\": \"sha256:") {
+        value = $0
+        sub(/^.*"digest": "sha256:/, "", value)
+        sub(/".*$/, "", value)
+        print tolower(value)
+        exit
+      }
+    ' "$metadata_file"
+  )"
+  [ -n "$expected" ] ||
+    fatal "GitHub release digest was not found for $RELEASE_ARTIFACT"
   printf '%s' "$expected"
 }
 

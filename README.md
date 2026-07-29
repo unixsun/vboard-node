@@ -48,6 +48,10 @@ vboard-node-linux-arm64.sha256
 安装器会在执行二进制前校验 SHA256。生产环境不要使用
 `--skip-checksum`。
 
+安装器默认从本仓库的 GitHub Releases 下载与当前 Linux 架构匹配的最新版
+节点程序，因此常规安装不需要额外传入 `--binary-url` 或
+`--release-base`。
+
 ## 常用命令
 
 ```bash

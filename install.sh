@@ -12,7 +12,7 @@ DEFAULT_CONFIG_DIR="/etc/vboard-node"
 DEFAULT_RUNTIME_DIR="/var/lib/vboard-node"
 DEFAULT_USER="root"
 DEFAULT_BINARY_URL=""
-DEFAULT_RELEASE_BASE=""
+DEFAULT_RELEASE_BASE="https://github.com/unixsun/vboard-node/releases"
 DEFAULT_RELEASE_VERSION="latest"
 DEFAULT_SING_BOX_VERSION=""
 DEFAULT_STATS_API="127.0.0.1:10085"
@@ -111,7 +111,7 @@ Examples:
 
   sudo bash install.sh upgrade \
     --release-base https://github.com/unixsun/vboard-node/releases \
-    --version v0.2.0
+    --version v0.1.0
 USAGE
 }
 

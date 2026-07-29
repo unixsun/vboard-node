@@ -1,0 +1,32 @@
+name: Installer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "install.sh"
+      - "test-install-rollback.sh"
+      - ".github/workflows/installer.yml"
+  pull_request:
+    paths:
+      - "install.sh"
+      - "test-install-rollback.sh"
+      - ".github/workflows/installer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Installer rollback
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate shell syntax
+        run: bash -n install.sh test-install-rollback.sh
+
+      - name: Verify failed upgrades roll back
+        run: sudo bash test-install-rollback.sh

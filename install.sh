@@ -760,7 +760,7 @@ self_test() {
 [vboard-node]   - sing-box is missing or the generated config is invalid
 [vboard-node] You can rerun the installer with --skip-self-test, or fix the parameters and run it again.
 EOF
-  exit 1
+  fatal "self-test failed; restored the previous installation"
 }
 
 write_systemd_service() {

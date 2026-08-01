@@ -37,6 +37,7 @@ CHECKSUM_URL="${VBOARD_NODE_CHECKSUM_URL:-}"
 SKIP_CHECKSUM="${VBOARD_NODE_SKIP_CHECKSUM:-false}"
 ENABLE_KERNEL="false"
 ENABLE_UPGRADE="${VBOARD_NODE_ENABLE_UPGRADE:-false}"
+ENABLE_CERTIFICATE_MANAGEMENT="${VBOARD_NODE_ENABLE_CERTIFICATE_MANAGEMENT:-false}"
 SING_BOX_BIN="sing-box"
 SING_BOX_BIN_SET="false"
 STATS_API="${VBOARD_NODE_STATS_API:-${DEFAULT_STATS_API}}"
@@ -89,6 +90,8 @@ Options:
   --user <user>          systemd service user (default: root)
   --enable-kernel        Let vboard-node manage the selected kernel process
   --enable-upgrade       Allow signed panel tasks to install a SHA256-pinned agent release
+  --enable-certificate-management
+                         Install Certbot for panel-managed TLS certificates
   --sing-box <path>      sing-box binary path (default: sing-box)
   --stats-api <addr>     sing-box V2Ray stats API address, empty disables stats config (default: 127.0.0.1:10085)
   --certificate-path     TLS server certificate chain path shared by this server's TLS nodes
@@ -106,7 +109,8 @@ Examples:
     --token vbnode_xxx \
     --machine-id 1 \
     --kernel sing-box \
-    --enable-kernel
+    --enable-kernel \
+    --enable-certificate-management
 
   VBOARD_NODE_BINARY_URL=https://github.com/unixsun/vboard-node/releases/latest/download/vboard-node-linux-amd64 \
     sudo bash install.sh --panel https://panel.example.com --token vbnode_xxx --machine-id 1 --enable-kernel
@@ -275,6 +279,10 @@ parse_args() {
         ENABLE_UPGRADE="true"
         shift
         ;;
+      --enable-certificate-management)
+        ENABLE_CERTIFICATE_MANAGEMENT="true"
+        shift
+        ;;
       --sing-box)
         SING_BOX_BIN="${2:-}"
         SING_BOX_BIN_SET="true"
@@ -352,6 +360,10 @@ validate_args() {
     true|false) ;;
     *) fatal "--enable-upgrade / VBOARD_NODE_ENABLE_UPGRADE must resolve to true or false" ;;
   esac
+  case "$ENABLE_CERTIFICATE_MANAGEMENT" in
+    true|false) ;;
+    *) fatal "--enable-certificate-management / VBOARD_NODE_ENABLE_CERTIFICATE_MANAGEMENT must resolve to true or false" ;;
+  esac
   if { [ -n "$CERTIFICATE_PATH" ] && [ -z "$PRIVATE_KEY_PATH" ]; } ||
      { [ -z "$CERTIFICATE_PATH" ] && [ -n "$PRIVATE_KEY_PATH" ]; }; then
     fatal "--certificate-path and --key-path must be configured together"
@@ -391,6 +403,8 @@ load_existing_config() {
   ENABLE_KERNEL="${ENABLE_KERNEL:-false}"
   ENABLE_UPGRADE="$(read_env_value ENABLE_UPGRADE)"
   ENABLE_UPGRADE="${ENABLE_UPGRADE:-false}"
+  ENABLE_CERTIFICATE_MANAGEMENT="$(read_env_value ENABLE_CERTIFICATE_MANAGEMENT)"
+  ENABLE_CERTIFICATE_MANAGEMENT="${ENABLE_CERTIFICATE_MANAGEMENT:-false}"
   CERTIFICATE_PATH="$(read_env_value CERTIFICATE_PATH)"
   PRIVATE_KEY_PATH="$(read_env_value PRIVATE_KEY_PATH)"
 }
@@ -688,6 +702,31 @@ ensure_sing_box() {
   log "sing-box not found, skipped because kernel management is disabled"
 }
 
+install_certbot() {
+  log "installing Certbot for panel-managed TLS certificates"
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends certbot
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y certbot
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y certbot
+  else
+    fatal "could not install Certbot automatically: supported package manager not found (apt-get, dnf, or yum)"
+  fi
+  command -v certbot >/dev/null 2>&1 || fatal "Certbot installation completed but the certbot command was not found"
+}
+
+ensure_certbot() {
+  [ "$ENABLE_CERTIFICATE_MANAGEMENT" = "true" ] || return 0
+  if command -v certbot >/dev/null 2>&1; then
+    log "using Certbot: $(command -v certbot)"
+    return 0
+  fi
+  install_certbot
+}
+
 write_env_file() {
   mkdir -p "$CONFIG_DIR" "$RUNTIME_DIR"
   chmod 0750 "$CONFIG_DIR" "$RUNTIME_DIR"
@@ -707,6 +746,7 @@ SING_BOX_BIN=${SING_BOX_BIN}
 STATS_API=${STATS_API}
 ENABLE_KERNEL=${ENABLE_KERNEL}
 ENABLE_UPGRADE=${ENABLE_UPGRADE}
+ENABLE_CERTIFICATE_MANAGEMENT=${ENABLE_CERTIFICATE_MANAGEMENT}
 CERTIFICATE_PATH=${CERTIFICATE_PATH}
 PRIVATE_KEY_PATH=${PRIVATE_KEY_PATH}
 EOF
@@ -799,7 +839,7 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-ReadWritePaths=${RUNTIME_DIR}
+ReadWritePaths=${RUNTIME_DIR} -/etc/letsencrypt -/var/lib/letsencrypt -/var/log/letsencrypt
 
 [Install]
 WantedBy=multi-user.target
@@ -924,6 +964,7 @@ main() {
   backup_existing_state
   install_staged_binary "$STAGED_BINARY"
   ensure_sing_box
+  ensure_certbot
   write_env_file
   self_test
   write_systemd_service

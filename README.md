@@ -19,11 +19,22 @@ curl -fsSL https://raw.githubusercontent.com/unixsun/vboard-node/main/install.sh
   --kernel sing-box \
   --kernel-mode embedded \
   --enable-kernel \
-  --enable-upgrade
+  --enable-upgrade \
+  --enable-certificate-management
 ```
 
 `--panel` 必须是子节点能够访问的面板地址。服务器 Token 具有节点配置拉取、
 心跳、流量和在线设备上报权限，请妥善保管，不要写入脚本或提交到仓库。
+
+## TLS 证书管理
+
+使用 `--enable-certificate-management` 时，安装器会在缺少 Certbot 的 Debian、
+Ubuntu、RHEL、Rocky Linux、AlmaLinux 或 CentOS 系统上通过系统包管理器自动安装
+Certbot。安装器不会修改云安全组或已有防火墙规则。
+
+在面板“服务器详情 → TLS 证书”中可发起环境检测。Agent 会临时监听 TCP 80，
+面板从公网回连验证域名解析和端口可达性，检测完成后立即停止临时服务。证书
+私钥始终保存在子服务器；距离到期不足 30 天时 Agent 会自动执行续期。
 
 ## TLS 节点
 
